@@ -20,7 +20,7 @@ print_help() {
        "through the mechanisms available to your board's bootloader."
 }
 
-if [ $1 = "--help" ] || [ $1 = "-h" ]; then
+if [ "$1" = "--help" ] || [ "$1" = "-h" ]; then
   print_help
   exit 0
 fi
