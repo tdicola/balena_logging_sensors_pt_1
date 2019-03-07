@@ -27,7 +27,7 @@ Finally you'll want [Docker Desktop](https://www.docker.com/products/docker-desk
 There are two major ways to interact with sensors and devices in embedded Linux:
 
 *   The Linux kernel (or operating system) can talk to the sensor directly with a device driver.  This driver is part of the operating system code and makes it easy for any application or code to use the sensor.  Your application simply asks the kernel for a sensor reading and doesn't have to worry about how to talk to the sensor.
-*   Your application can write code to talk to the sensor over an appropriate hardware bus or interface.  For example the sensors on the Enviro-pHAT use the I2C protocol to interface with the board, and you could write (or find) code that talks to the sensors directly over the I2C bus.  For example Pimoroni publishes a [Python library](https://github.com/pimoroni/enviro-phat) to access all of the sensors on the board from application code instead of from a driver.
+*   Your application can write code to talk to the sensor over an appropriate hardware bus or interface.  For example the sensors on the Enviro-pHAT use the I2C protocol to interface with the board, and you could write (or find) code that talks to the sensors directly over the I2C bus.  Pimoroni publishes a [Python library](https://github.com/pimoroni/enviro-phat) to access all of the sensors on the board from application code instead of from a driver.
 
 Which way is the 'best' way to talk to a sensor with embedded Linux, should you let the kernel talk to it with a driver or leave it up to your application code?  The answer is, it depends!  However the first approach of using a device driver and the Linux kernel to talk to a sensor has a few advantages over your application code doing so:
 
@@ -494,8 +494,9 @@ After the device reboots with the configuration variable and overlay applied it 
 
 ### Sensor Summary
 
-At this point you've successfully built, compiled, and applied a device tree overlay to enable the BMP280 pressure/temperature sensor on your board!  Let's summarize the steps by enabling another sensor on the Enviro-pHAT, the ADS1015 analog to digital converter.
+At this point you've successfully built, compiled, and applied a device tree overlay to enable the BMP280 pressure/temperature sensor on your board!
 
+Let's summarize the steps by enabling another sensor on the Enviro-pHAT, the ADS1015 analog to digital converter:
 1.  Verify the kernel supports the ADS1015 driver.  By searching the kernel driver code and KConfig files you can see the [ADS1015 is available as an older hwmon style sensor driver](https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/tree/drivers/hwmon/Kconfig?h=v4.14.105#n1515) called 'ads1015'.
 
 2.  Verify the kernel running on the board includes the ADS1015 driver.  Running `modinfo ads1015` on the board reports the driver is included:
