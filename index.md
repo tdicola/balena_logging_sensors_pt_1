@@ -121,150 +121,12 @@ Notice the command fails to find a module for the sensor.  This means that altho
 
 Once you've confirmed the Linux kernel supports your sensor you need to use the device tree to configure and enable the sensor driver.  The device tree is a concept in Linux that's simply a description of the hardware connected to a board.  Think of the device tree like a list of ingredients in a recipe.  With a recipe the list of ingredients alone isn't enough to make the dish, you also need instructions which explain how to use and combine each of the ingredients together.  The driver code in the kernel is kind of like the instructions in a recipe--it explains how to use the hardware described in the device tree. Remember the device tree describes what is connected, and the kernel code instructs how those devices work--you need both things to have a functioning Linux system!
 
-Although the device tree is critical to the functioning of a Linux board it has unfortunately been a somewhat maligned and misunderstood component.  One problem is that the device tree and its usage has been under active development and much of the tools, documentation, and best practices have been  evolving and changing.  Be careful to make sure information you seek out on the device tree is current and relevant to your needs.
-
-Another common stumbling block with understanding the device tree is that there are different users of it with slightly different needs:
-
-*   Board creators need to create entire device trees from scratch which explain in detail the hardware necessary to boot a board.  For example components like the processors, memory chips & DMA controllers, GPIO and bus controllers, etc. must be described in a device tree for any Linux board.  Typically a board creator will carefully study their processor and hardware datasheets to exactly describe the registers, memory addresses, etc. in their device tree.  For them the hardware is fixed and never changes between board reboots.
-*   Board users however just need to create small additions, or overlays, to their board's device tree that enable new hardware.  Rather than write an entirely new device tree from scratch, these users just need to add a small sensor or piece of hardware to an existing device tree.  In this case the hardware can be dynamic and change between boot when a sensor is added or removed.
-
-Keep these two users in mind as you explore and learn more about the device tree.  Much of the information and documentation available on the device tree is targeted at board creators who expect to create and interact with entire device trees that never change.  If you're a board user that just needs to add a sensor or small device to a board then you don't need to fully immerse yourself in all the quirks and functions of the device tree.  This project will point you towards just enough device tree information to start adding components like sensors to your board.
-
-For reference, as of 2019, some of the best sources of information on the device tree are:
-
-*   [Device Tree Usage wiki](https://elinux.org/Device_Tree_Usage) - This is the most in depth and canonical reference for the device tree available today.  Be warned that this wiki dives deep into all uses of the device tree, in particular for board creators.  This is a great resource to use as a reference or to explore device tree topics in depth.
-*   [Introductory device tree talks & papers](https://elinux.org/Device_Tree_presentations_papers_articles#introduction_to_device_tree.2C_overviews.2C_and_howtos) - This section of the device tree usage wiki is an amazing catalog of presentations and information on the device tree.  Start here for great introductory information, but again be aware that older presentations might not show all the latest best practices.
-*   [Device Tree for Dummies talk  by Thomas Petazzoni from ELC 2014](https://www.youtube.com/watch?v=uzBwHFjJ0vU) - If you only have time to look at one resource on the device tree, be sure to watch this introductory talk from the embedded Linux conference.  This presentation explains just enough information to get started with reading and understanding device tree source code.
-
-With that background out of the way, let's dive in and create a device tree overlay to add support for the BMP280 sensor.  When adding a new device to your board with the device tree there are two important pieces of information to find:
-*   Where to add the hardware to your board's device tree.  The device tree is almost like your board's filesystem in that it has a root node and many children (with children of their own) below it.  When you add a new device with an overlay you need to find where in the device tree to put it--like under the root as a new top-level item, or maybe under a bus like the I2C or SPI bus.
-*   What to put in the device tree node you're adding to the board.  This is information like the address of the device on the I2C bus or related GPIO lines like chip select, etc.  The exact information you need to specify depends on the device driver.
-
-We'll start by answering the question of where to put a new sensor node in the device tree.  To do this we'll need to explore symbols in your board's device tree.
-
-### Device Tree Symbols
-
-To find out where in the device tree to place a new node it's helpful to see the entire device tree for your board.  You can use a dtc (device tree compiler) tool to print out the source for your running board's device tree.  
-
-On a BalenaOS device you can run this dtc tool in a privileged container as a quick one-off exercise.  For example connect to the BalenaOS device host terminal and run the following command to start a Debian-based container shell:
-````
-balena run -it --privileged balenalib/armv7hf-debian:stretch /bin/bash
-````
-
-If you're instead running Raspbian or a similar Debian-based OS you can skip the above and connect directly to the device's shell.
-
-Next update the OS packages and ensure the device-tree-compiler package is installed:
-````
-sudo apt-get update
-sudo apt-get install device-tree-compiler less -y
-````
-
-Now use the dtc tool to print out the entire device tree source for the running board:
-````
-dtc -I fs -O dts /proc/device-treee | less
-````
-
-You can scroll through the output and the source for your board's device tree (or you can instead send the output to a file and view in an editor by replacing the pipe to less, `| less`, with a direction to a file `> board.dts`).
-
-There's a *lot* of information in the device tree, but luckily you don't need to use or interact with all of it.  There's one important section to find, it's a symbol list that starts with `__symbols__`:
-````
-__symbols__ {
-    uart0_gpio14 = "/soc/gpio@7e200000/uart0_gpio14";
-    pwm = "/soc/pwm@7e20c000";
-    gpclk1_gpio5 = "/soc/gpio@7e200000/gpclk1_gpio5";
-    clk_usb = "/clocks/clock@4";
-    pixelvalve0 = "/soc/pixelvalve@7e206000";
-    uart0_ctsrts_gpio30 = "/soc/gpio@7e200000/uart0_ctsrts_gpio30";
-    uart1_ctsrts_gpio16 = "/soc/gpio@7e200000/uart1_ctsrts_gpio16";
-    uart0_gpio32 = "/soc/gpio@7e200000/uart0_gpio32";
-    intc = "/soc/interrupt-controller@7e00b200";
-    spi2 = "/soc/spi@7e2150c0";
-    jtag_gpio4 = "/soc/gpio@7e200000/jtag_gpio4";
-    dsi1 = "/soc/dsi@7e700000";
-    clocks = "/soc/cprman@7e101000";
-    i2c1 = "/soc/i2c@7e804000";
-    i2c_vc = "/soc/i2c@7e205000";
-    firmwarekms = "/soc/firmwarekms@7e600000";
-    smi = "/soc/smi@7e600000";
-    ... more symbols ommitted ...
-};
-````
-Think of the symbols that a board device tree exposes as the 'extension points' or parent nodes where you can place new elements.  Symbols are simply names given to paths in the device tree, like the name `i2c1` points to the path `/soc/i2c@7e804000`. Typically a board creator will create and label symbols for all the important buses and devices on the board, and device tree overlays you create can target those symbols to place new nodes inside.
-
-Although there's no formal convention across boards, typically you'll see symbols like:
-*   `i2c*` - Where the `*` is a board's I2C bus, like on the Raspberry Pi 3 the `/dev/i2c-1` bus exposed by the GPIO header is the `i2c1` symbol.  You might notice other I2C buses in the Pi device tree symbols and wonder where those are used, they're actually internal I2C buses used by the video core processor, CPU, etc.
-*   `spidev*` - Where the `*` is a board's SPI bus, like on the Raspberry Pi 3 the `/dev/spidev0.0` bus exposed by the GPIO header is the `spidev0` symbol.
-*   `soc` - This is typically the root or top-most node of the device tree for modern ARM-based Linux boards.  This can be a good place to put child items which aren't associated with a bus or other device, for example if adding a sensor that only interfaces with GPIO.
-*   `gpio` - This is typically the GPIO controller on the board and is a parent for much of the board's GPIO pin configuration and control.
-
-Since the BMP280 sensor on the Enviro-pHAT is connected to the Pi's GPIO header it will be connected to the `/dev/i2c-1` bus and associated with the `i2c1` symbol as its parent in the device tree.
-
-### Device Tree Bindings
-
-Once you know the location to place a new device tree node you need to next understand what to put in that node.  This is called a device tree 'binding' because it associates configuration and other information with a device tree node that drivers will read to configure the device.  Device tree bindings  have their own documentation in the Linux kernel under the [Documentation/device-tree/bindings](https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/tree/Documentation/devicetree/bindings?h=v4.14.105) path.  If you explore the IIO subfolders (remember the BMP280 device we're adding is using an IIO driver) you'll see it has a file [bmp085.txt](https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/tree/Documentation/devicetree/bindings/iio/pressure/bmp085.txt?h=v4.14.105) for the Bosch BMP pressure sensors:
-````
-BMP085/BMP18x/BMP28x digital pressure sensors
-
-Required properties:
-- compatible: must be one of:
-  "bosch,bmp085"
-  "bosch,bmp180"
-  "bosch,bmp280"
-  "bosch,bme280"
-
-Optional properties:
-- chip-id: configurable chip id for non-default chip revisions
-- temp-measurement-period: temperature measurement period (milliseconds)
-- default-oversampling: default oversampling value to be used at startup,
-  value range is 0-3 with rising sensitivity.
-- interrupt-parent: should be the phandle for the interrupt controller
-- interrupts: interrupt mapping for IRQ
-- reset-gpios: a GPIO line handling reset of the sensor: as the line is
-  active low, it should be marked GPIO_ACTIVE_LOW (see gpio/gpio.txt)
-- vddd-supply: digital voltage regulator (see regulator/regulator.txt)
-- vdda-supply: analog voltage regulator (see regulator/regulator.txt)
-
-Example:
-
-pressure@77 {
-  compatible = "bosch,bmp085";
-  reg = <0x77>;
-  chip-id = <10>;
-  temp-measurement-period = <100>;
-  default-oversampling = <2>;
-  interrupt-parent = <&gpio0>;
-  interrupts = <25 IRQ_TYPE_EDGE_RISING>;
-  reset-gpios = <&gpio0 26 GPIO_ACTIVE_LOW>;
-  vddd-supply = <&foo>;
-  vdda-supply = <&bar>;
-};
-````
-This is excellent information that tells you exactly what to put in a device tree node to enable the device. Nodes in the device tree typically have required and optional values.  One required value is the `compatible` field which tells the kernel exactly what driver to load for this device.  Notice the BMP sensor documentation calls out a list of possible values like "bosch,bmp280".  Take note of these values and choose the appropriate one for your device, you will need to specify it *exactly* as shown in the documentation.
-
-You can examine the optional properties to see other parameters which allow you to adjust the behavior of the device and driver.  Typically configuration like interrupt lines, samping rate, range, etc. are specified in optional properties.
-
-One thing this binding document doesn't make clear is that there is another required property, the `reg` field.  This field is used with I2C devices to specify the address of the device on the I2C bus.  Remember the I2C protocol allows multiple devices to be connected to the same bus and each is identified by a unique 7-bit address.  For the BMP280 sensor used on the Enviro-pHAT its [datasheet](https://ae-bst.resource.bosch.com/media/_tech/media/datasheets/BST-BMP280-DS001.pdf) mentions the device has an I2C address of 0x76 or 0x77 depending on its SDO pin value.  Pimoroni [publishes the schematic and details of their board](https://pinout.xyz/pinout/enviro_phat) so you can see definitively that its BMP280 sensor should be at I2C address 0x77.
-
-Now we have exactly what's necessary to create a device tree overlay that tells the Linux kernel about the sensor connected to the board.  Specifically we know this important information:
-
-*   The sensor is connected to the `/dev/i2c-1` bus (the GPIO header on the Pi) and should be a child of the `i2c1` symbol in the device tree.
-*   The sensor device tree binding uses a `compatible` field value of `bosch,bmp280` to specify the BMP280 sensor.
-*   The sensor is located at I2C address `0x77` on the bus and should have a `reg` value of `0x77` in the device tree binding.
-*   The sensor device tree bindings support optional parameters to control measurement period, oversampling, etc.  The default values will be used to keep this example simple.
-
-### Crafting A Device Tree Overlay
-
-Now that we know all the information about the sensor, let's create a device tree overlay to add it to the board's device tree!  Device trees are written in a text-based language that has some similarities with the C programming language.  These source files are compiled into a compact binary form using the dtc device tree compiler tool and then applied to the board's device tree.
-
-Create a text file called `enviro-phat.dts` and place this device tree source code inside it:
+For now we'll assume a device tree overlay is already written and move on to show how to compile and apply it to the board and enable the sensor.  However check out the [appendix to this guide](#appendix-writing-a-device-tree-overlay) for a deep dive into how to write your own device tree overlays.  The overlay we intend to use is the following [enviro-phat.dts](https://github.com/tdicola/balena_logging_sensors_pt_1/blob/master/dtoverlay/overlays/enviro-phat.dts) file:
 ````
 /dts-v1/;
 /plugin/;
 
 &i2c1 {
-  /* This is boilerplate to ensure the I2C bus is enabled and the new devices
-     are specified with their 8-bit I2C address in the reg property.
-  */
   status = "okay";
   #address-cells = <1>;
   #size-cells = <0>;
@@ -273,58 +135,17 @@ Create a text file called `enviro-phat.dts` and place this device tree source co
   bmp280@77 {
     compatible = "bosch,bmp280";
     reg = <0x77>;
+  };
 
-    /* Note there are optional parameters to control the sample rate and
-       other state of the BMP280 sensor.  See the documentation here:
-       https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/tree/Documentation/devicetree/bindings/iio/pressure/bmp085.txt?h=v4.14.104
-    */
+  /* Define the ADS1015 ADC at address 0x49 */
+  ads1015@49 {
+    compatible = "ti,ads1015";
+    reg = <0x49>;
   };
 };
 ````
 
-Let's walk through the components of this device tree overlay step by step.  The first two lines are boilerplate that describe this device tree source as an overlay using the latest v1 version of the format:
-````
-/dts-v1/;
-/plugin/;
-````
-
-Next a block is created to target the `i2c1` symbol and add new children or update properties of it:
-````
-&i2c1 {
-````
-
-If you've used the device tree before you might be wondering what this syntax means--it's actually a recent addition (as of ~September 2018) to device tree source which removes older more verbose fragment syntax with a direct shorthand reference.  The ampersand and symbol name starting this block means that the properties and children within should be applied to the `i2c1` symbol in the board's device tree.
-
-Inside the block you'll first see a comment (notice comments follow the C langauge style with `/* ... */` blocks) and three properties of the `i2c1` node that are updated:
-````
-status = "okay";
-#address-cells = <1>;
-#size-cells = <0>;
-````
-
-These properties are effectively boilerplate that all I2C bus overlays will specify.  The [documentation for I2C controller device tree bindings](https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/tree/Documentation/devicetree/bindings/i2c/i2c.txt?h=v4.14.105) specify their exact meaning. The status "okay" means the I2C bus should be enabled, and address-cells and size-cells are configured for a single 7-bit address in the `reg` property of child nodes.  It's not important to understand these properties in depth as they are boilerplate code necessary for targeting new devices on an I2C bus.
-
-Now the most important part of the overlay is specified, the new node to add which describes the BMP280 sensor:
-````
-/* Define the BMP280 pressure sensor at address 0x77 */
-bmp280@77 {
-  compatible = "bosch,bmp280";
-  reg = <0x77>;
-
-  /* Note there are optional parameters to control the sample rate and
-   other state of the BMP280 sensor.  See the documentation here:
-   https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/tree/Documentation/devicetree/bindings/iio/pressure/bmp085.txt?h=v4.14.104
-  */
-};
-````
-
-The first line gives this node a name in the device tree.  The name can be any value, but typically the convention for I2C devices is to use a description of the device, `@`, and then the I2C address of the device.  This ensures that every device on an I2C bus has a unique name and path in the device tree (otherwise sensors might clash and overwrite each others configuration!).
-
-Next notice the `compatible` and `reg` properties are specified.  These are the values discovered earlier by reading the device tree binding documentation and sensor datasheet.  The `compatible` field describes what driver to associate with this device tree node, and the `reg` property is used in I2C devices to specify the address on the I2C bus.
-
-That's all there is to a basic device tree overlay that adds a new node!  Simply target a parent symbol in a block, specify any properties to change on that parent, and then specify new child devices to add.
-
-### Compiling A Device Tree Overlay
+## Compiling A Device Tree Overlay
 
 Once you've written a device tree overlay source file you need to compile it into a binary that can be applied to the kernel.  The dtc device tree compiler tool makes it easy to perform this compilation.  However you'll want to make sure you're using the latest version of the compiler as some of the syntax above (like the shorthand &&lt;symbol&gt; syntax) isn't supported by older versions.  Let's use a [container called dtoverlay](https://github.com/tdicola/balena_logging_sensors_pt_1/tree/master/dtoverlay) that builds and runs the  dtc tool to ensure we use the right version.
 
@@ -650,3 +471,208 @@ It is increasingly uncommon to find sensors that only support this older hwmon i
 This project has shown how to enable sensor device drivers that talk to hardware with embedded Linux.  You saw the steps to find drivers, create device tree overlays, and apply those overlays to a board.  Using these steps you can enable *any* new driver or hardware on an embedded Linux board!
 
 In the next part of this project we'll build on reading sensor data from the Enviro-pHAT with drivers to show how to log and graph the data in a web dashboard!
+
+## Appendix: Writing a Device Tree Overlay
+
+In this section let's examine in detail how to approach writing a sensor device tree overlay from scratch.  Although the device tree is critical to the functioning of a Linux board it has unfortunately been a somewhat maligned and misunderstood component.  One problem is that the device tree and its usage has been under active development and much of the tools, documentation, and best practices have been evolving and changing.  Be careful to make sure information you seek out on the device tree is current and relevant to your needs.
+
+Another common stumbling block with understanding the device tree is that there are different users of it with slightly different needs:
+
+*   Board creators need to create entire device trees from scratch which explain in detail the hardware necessary to boot a board.  For example components like the processors, memory chips & DMA controllers, GPIO and bus controllers, etc. must be described in a device tree for any Linux board.  Typically a board creator will carefully study their processor and hardware datasheets to exactly describe the registers, memory addresses, etc. in their device tree.  For them the hardware is fixed and never changes between board reboots.
+*   Board users however just need to create small additions, or overlays, to their board's device tree that enable new hardware.  Rather than write an entirely new device tree from scratch, these users just need to add a small sensor or piece of hardware to an existing device tree.  In this case the hardware can be dynamic and change between boot when a sensor is added or removed.
+
+Keep these two users in mind as you explore and learn more about the device tree.  Much of the information and documentation available on the device tree is targeted at board creators who expect to create and interact with entire device trees that never change.  If you're a board user that just needs to add a sensor or small device to a board then you don't need to fully immerse yourself in all the quirks and functions of the device tree.  This project will point you towards just enough device tree information to start adding components like sensors to your board.
+
+For reference, as of 2019, some of the best sources of information on the device tree are:
+
+*   [Device Tree Usage wiki](https://elinux.org/Device_Tree_Usage) - This is the most in depth and canonical reference for the device tree available today.  Be warned that this wiki dives deep into all uses of the device tree, in particular for board creators.  This is a great resource to use as a reference or to explore device tree topics in depth.
+*   [Introductory device tree talks & papers](https://elinux.org/Device_Tree_presentations_papers_articles#introduction_to_device_tree.2C_overviews.2C_and_howtos) - This section of the device tree usage wiki is an amazing catalog of presentations and information on the device tree.  Start here for great introductory information, but again be aware that older presentations might not show all the latest best practices.
+*   [Device Tree for Dummies talk  by Thomas Petazzoni from ELC 2014](https://www.youtube.com/watch?v=uzBwHFjJ0vU) - If you only have time to look at one resource on the device tree, be sure to watch this introductory talk from the embedded Linux conference.  This presentation explains just enough information to get started with reading and understanding device tree source code.
+
+With that background out of the way, let's dive in and create a device tree overlay to add support for the BMP280 sensor.  When adding a new device to your board with the device tree there are two important pieces of information to find:
+*   Where to add the hardware to your board's device tree.  The device tree is almost like your board's filesystem in that it has a root node and many children (with children of their own) below it.  When you add a new device with an overlay you need to find where in the device tree to put it--like under the root as a new top-level item, or maybe under a bus like the I2C or SPI bus.
+*   What to put in the device tree node you're adding to the board.  This is information like the address of the device on the I2C bus or related GPIO lines like chip select, etc.  The exact information you need to specify depends on the device driver.
+
+We'll start by answering the question of where to put a new sensor node in the device tree.  To do this we'll need to explore symbols in your board's device tree.
+
+### Device Tree Symbols
+
+To find out where in the device tree to place a new node it's helpful to see the entire device tree for your board.  You can use a dtc (device tree compiler) tool to print out the source for your running board's device tree.  
+
+On a BalenaOS device you can run this dtc tool in a privileged container as a quick one-off exercise.  For example connect to the BalenaOS device host terminal and run the following command to start a Debian-based container shell:
+````
+balena run -it --privileged balenalib/armv7hf-debian:stretch /bin/bash
+````
+
+If you're instead running Raspbian or a similar Debian-based OS you can skip the above and connect directly to the device's shell.
+
+Next update the OS packages and ensure the device-tree-compiler package is installed:
+````
+sudo apt-get update
+sudo apt-get install device-tree-compiler less -y
+````
+
+Now use the dtc tool to print out the entire device tree source for the running board:
+````
+dtc -I fs -O dts /proc/device-treee | less
+````
+
+You can scroll through the output and the source for your board's device tree (or you can instead send the output to a file and view in an editor by replacing the pipe to less, `| less`, with a direction to a file `> board.dts`).
+
+There's a *lot* of information in the device tree, but luckily you don't need to use or interact with all of it.  There's one important section to find, it's a symbol list that starts with `__symbols__`:
+````
+__symbols__ {
+    uart0_gpio14 = "/soc/gpio@7e200000/uart0_gpio14";
+    pwm = "/soc/pwm@7e20c000";
+    gpclk1_gpio5 = "/soc/gpio@7e200000/gpclk1_gpio5";
+    clk_usb = "/clocks/clock@4";
+    pixelvalve0 = "/soc/pixelvalve@7e206000";
+    uart0_ctsrts_gpio30 = "/soc/gpio@7e200000/uart0_ctsrts_gpio30";
+    uart1_ctsrts_gpio16 = "/soc/gpio@7e200000/uart1_ctsrts_gpio16";
+    uart0_gpio32 = "/soc/gpio@7e200000/uart0_gpio32";
+    intc = "/soc/interrupt-controller@7e00b200";
+    spi2 = "/soc/spi@7e2150c0";
+    jtag_gpio4 = "/soc/gpio@7e200000/jtag_gpio4";
+    dsi1 = "/soc/dsi@7e700000";
+    clocks = "/soc/cprman@7e101000";
+    i2c1 = "/soc/i2c@7e804000";
+    i2c_vc = "/soc/i2c@7e205000";
+    firmwarekms = "/soc/firmwarekms@7e600000";
+    smi = "/soc/smi@7e600000";
+    ... more symbols ommitted ...
+};
+````
+Think of the symbols that a board device tree exposes as the 'extension points' or parent nodes where you can place new elements.  Symbols are simply names given to paths in the device tree, like the name `i2c1` points to the path `/soc/i2c@7e804000`. Typically a board creator will create and label symbols for all the important buses and devices on the board, and device tree overlays you create can target those symbols to place new nodes inside.
+
+Although there's no formal convention across boards, typically you'll see symbols like:
+*   `i2c*` - Where the `*` is a board's I2C bus, like on the Raspberry Pi 3 the `/dev/i2c-1` bus exposed by the GPIO header is the `i2c1` symbol.  You might notice other I2C buses in the Pi device tree symbols and wonder where those are used, they're actually internal I2C buses used by the video core processor, CPU, etc.
+*   `spidev*` - Where the `*` is a board's SPI bus, like on the Raspberry Pi 3 the `/dev/spidev0.0` bus exposed by the GPIO header is the `spidev0` symbol.
+*   `soc` - This is typically the root or top-most node of the device tree for modern ARM-based Linux boards.  This can be a good place to put child items which aren't associated with a bus or other device, for example if adding a sensor that only interfaces with GPIO.
+*   `gpio` - This is typically the GPIO controller on the board and is a parent for much of the board's GPIO pin configuration and control.
+
+Since the BMP280 sensor on the Enviro-pHAT is connected to the Pi's GPIO header it will be connected to the `/dev/i2c-1` bus and associated with the `i2c1` symbol as its parent in the device tree.
+
+### Device Tree Bindings
+
+Once you know the location to place a new device tree node you need to next understand what to put in that node.  This is called a device tree 'binding' because it associates configuration and other information with a device tree node that drivers will read to configure the device.  Device tree bindings  have their own documentation in the Linux kernel under the [Documentation/device-tree/bindings](https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/tree/Documentation/devicetree/bindings?h=v4.14.105) path.  If you explore the IIO subfolders (remember the BMP280 device we're adding is using an IIO driver) you'll see it has a file [bmp085.txt](https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/tree/Documentation/devicetree/bindings/iio/pressure/bmp085.txt?h=v4.14.105) for the Bosch BMP pressure sensors:
+````
+BMP085/BMP18x/BMP28x digital pressure sensors
+
+Required properties:
+- compatible: must be one of:
+  "bosch,bmp085"
+  "bosch,bmp180"
+  "bosch,bmp280"
+  "bosch,bme280"
+
+Optional properties:
+- chip-id: configurable chip id for non-default chip revisions
+- temp-measurement-period: temperature measurement period (milliseconds)
+- default-oversampling: default oversampling value to be used at startup,
+  value range is 0-3 with rising sensitivity.
+- interrupt-parent: should be the phandle for the interrupt controller
+- interrupts: interrupt mapping for IRQ
+- reset-gpios: a GPIO line handling reset of the sensor: as the line is
+  active low, it should be marked GPIO_ACTIVE_LOW (see gpio/gpio.txt)
+- vddd-supply: digital voltage regulator (see regulator/regulator.txt)
+- vdda-supply: analog voltage regulator (see regulator/regulator.txt)
+
+Example:
+
+pressure@77 {
+  compatible = "bosch,bmp085";
+  reg = <0x77>;
+  chip-id = <10>;
+  temp-measurement-period = <100>;
+  default-oversampling = <2>;
+  interrupt-parent = <&gpio0>;
+  interrupts = <25 IRQ_TYPE_EDGE_RISING>;
+  reset-gpios = <&gpio0 26 GPIO_ACTIVE_LOW>;
+  vddd-supply = <&foo>;
+  vdda-supply = <&bar>;
+};
+````
+This is excellent information that tells you exactly what to put in a device tree node to enable the device. Nodes in the device tree typically have required and optional values.  One required value is the `compatible` field which tells the kernel exactly what driver to load for this device.  Notice the BMP sensor documentation calls out a list of possible values like "bosch,bmp280".  Take note of these values and choose the appropriate one for your device, you will need to specify it *exactly* as shown in the documentation.
+
+You can examine the optional properties to see other parameters which allow you to adjust the behavior of the device and driver.  Typically configuration like interrupt lines, samping rate, range, etc. are specified in optional properties.
+
+One thing this binding document doesn't make clear is that there is another required property, the `reg` field.  This field is used with I2C devices to specify the address of the device on the I2C bus.  Remember the I2C protocol allows multiple devices to be connected to the same bus and each is identified by a unique 7-bit address.  For the BMP280 sensor used on the Enviro-pHAT its [datasheet](https://ae-bst.resource.bosch.com/media/_tech/media/datasheets/BST-BMP280-DS001.pdf) mentions the device has an I2C address of 0x76 or 0x77 depending on its SDO pin value.  Pimoroni [publishes the schematic and details of their board](https://pinout.xyz/pinout/enviro_phat) so you can see definitively that its BMP280 sensor should be at I2C address 0x77.
+
+Now we have exactly what's necessary to create a device tree overlay that tells the Linux kernel about the sensor connected to the board.  Specifically we know this important information:
+
+*   The sensor is connected to the `/dev/i2c-1` bus (the GPIO header on the Pi) and should be a child of the `i2c1` symbol in the device tree.
+*   The sensor device tree binding uses a `compatible` field value of `bosch,bmp280` to specify the BMP280 sensor.
+*   The sensor is located at I2C address `0x77` on the bus and should have a `reg` value of `0x77` in the device tree binding.
+*   The sensor device tree bindings support optional parameters to control measurement period, oversampling, etc.  The default values will be used to keep this example simple.
+
+### Crafting A Device Tree Overlay
+
+Now that we know all the information about the sensor, let's create a device tree overlay to add it to the board's device tree!  Device trees are written in a text-based language that has some similarities with the C programming language.  These source files are compiled into a compact binary form using the dtc device tree compiler tool and then applied to the board's device tree.
+
+Create a text file called `enviro-phat.dts` and place this device tree source code inside it:
+````
+/dts-v1/;
+/plugin/;
+
+&i2c1 {
+  /* This is boilerplate to ensure the I2C bus is enabled and the new devices
+     are specified with their 8-bit I2C address in the reg property.
+  */
+  status = "okay";
+  #address-cells = <1>;
+  #size-cells = <0>;
+
+  /* Define the BMP280 pressure sensor at address 0x77 */
+  bmp280@77 {
+    compatible = "bosch,bmp280";
+    reg = <0x77>;
+
+    /* Note there are optional parameters to control the sample rate and
+       other state of the BMP280 sensor.  See the documentation here:
+       https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/tree/Documentation/devicetree/bindings/iio/pressure/bmp085.txt?h=v4.14.104
+    */
+  };
+};
+````
+
+Let's walk through the components of this device tree overlay step by step.  The first two lines are boilerplate that describe this device tree source as an overlay using the latest v1 version of the format:
+````
+/dts-v1/;
+/plugin/;
+````
+
+Next a block is created to target the `i2c1` symbol and add new children or update properties of it:
+````
+&i2c1 {
+````
+
+If you've used the device tree before you might be wondering what this syntax means--it's actually a recent addition (as of ~September 2018) to device tree source which removes older more verbose fragment syntax with a direct shorthand reference.  The ampersand and symbol name starting this block means that the properties and children within should be applied to the `i2c1` symbol in the board's device tree.
+
+Inside the block you'll first see a comment (notice comments follow the C langauge style with `/* ... */` blocks) and three properties of the `i2c1` node that are updated:
+````
+status = "okay";
+#address-cells = <1>;
+#size-cells = <0>;
+````
+
+These properties are effectively boilerplate that all I2C bus overlays will specify.  The [documentation for I2C controller device tree bindings](https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/tree/Documentation/devicetree/bindings/i2c/i2c.txt?h=v4.14.105) specify their exact meaning. The status "okay" means the I2C bus should be enabled, and address-cells and size-cells are configured for a single 7-bit address in the `reg` property of child nodes.  It's not important to understand these properties in depth as they are boilerplate code necessary for targeting new devices on an I2C bus.
+
+Now the most important part of the overlay is specified, the new node to add which describes the BMP280 sensor:
+````
+/* Define the BMP280 pressure sensor at address 0x77 */
+bmp280@77 {
+  compatible = "bosch,bmp280";
+  reg = <0x77>;
+
+  /* Note there are optional parameters to control the sample rate and
+   other state of the BMP280 sensor.  See the documentation here:
+   https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/tree/Documentation/devicetree/bindings/iio/pressure/bmp085.txt?h=v4.14.104
+  */
+};
+````
+
+The first line gives this node a name in the device tree.  The name can be any value, but typically the convention for I2C devices is to use a description of the device, `@`, and then the I2C address of the device.  This ensures that every device on an I2C bus has a unique name and path in the device tree (otherwise sensors might clash and overwrite each others configuration!).
+
+Next notice the `compatible` and `reg` properties are specified.  These are the values discovered earlier by reading the device tree binding documentation and sensor datasheet.  The `compatible` field describes what driver to associate with this device tree node, and the `reg` property is used in I2C devices to specify the address on the I2C bus.
+
+That's all there is to a basic device tree overlay that adds a new node!  Simply target a parent symbol in a block, specify any properties to change on that parent, and then specify new child devices to add.
