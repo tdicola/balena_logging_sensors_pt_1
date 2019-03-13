@@ -1,6 +1,8 @@
 
 # Logging Data With Balena Pt. 1: Reading Sensors in Embedded Linux
 
+[![Screencast](https://img.youtube.com/vi/G9E_acl3zeI/0.jpg)](https://www.youtube.com/watch?v=G9E_acl3zeI)
+
 This project is the first in a three part series that explores in depth how to log data from sensors with embedded Linux and a container-based architecture.  You'll learn how to connect a sensor to a Linux board and read data from it, how to store and graph sensor data with modern service tools like InfluxDB and Grafana, and how to scale the application up to many devices and sensors.  This first project explores in depth how to read sensors with embedded Linux using  IIO and hwmon device drivers.
 
 ## Hardware
